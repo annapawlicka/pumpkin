@@ -8,20 +8,28 @@
 
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/clojurescript "0.0-2371" :scope "provided"]
-                 [ring "1.3.1"]
-                 [compojure "1.2.0"]
-                 [enlive "1.1.5"]
-                 [om "0.7.3"]
-                 [sablono "0.2.22"]
+                 [leiningen "2.5.0"]
                  [org.clojure/core.async "0.1.346.0-17112a-alpha"]
                  [com.taoensso/sente "1.1.0"]
+
+                 ;; Server
+                 [ring "1.3.1"]
+                 [compojure "1.2.0"]
                  [http-kit "2.1.18"]
+                 [org.clojure/data.json "0.2.5"]
+
+                 ;; UI
+                 [racehub/om-bootstrap "0.3.1"]
+                 [om "0.8.0-alpha1"]
+                 [sablono "0.2.22"]
+                 [com.andrewmcveigh/cljs-time "0.2.1"]
+
+                 ;; Dev environment
+                 [enlive "1.1.5"]
                  [figwheel "0.1.4-SNAPSHOT"]
                  [environ "1.0.0"]
                  [com.cemerick/piggieback "0.1.3"]
-                 [weasel "0.4.0-SNAPSHOT"]
-                 [leiningen "2.5.0"]
-                 [org.clojure/data.json "0.2.5"]]
+                 [weasel "0.4.0-SNAPSHOT"]]
 
   :plugins [[lein-cljsbuild "1.0.3"]
             [lein-environ "1.0.0"]]
@@ -36,7 +44,8 @@
                                     :output-dir    "resources/public/js/out"
                                     :source-map    "resources/public/js/out.js.map"
                                     :preamble      ["react/react.min.js"]
-                                    :externs       ["react/externs/react.js"]
+                                    :externs       ["react/externs/react.js" "resources/public/js/d3.js"
+                                                    "resources/public/js/dimple.js"]
                                     :optimizations :none
                                     :pretty-print  true}}}}
 
@@ -51,10 +60,10 @@
 
              :uberjar {:hooks [leiningen.cljsbuild]
                        :env {:production true}
-                       :omit-source true
                        :aot :all
                        :cljsbuild {:builds {:pumpkin
                                             {:source-paths ["env/prod/cljs"]
                                              :compiler
-                                             {:optimizations :advanced
-                                              :pretty-print false}}}}}})
+                                             {:optimizations :whitespace
+                                              :closure-warnings {:externs-validation :off
+                                                                 :non-standard-jsdoc :off}}}}}}})

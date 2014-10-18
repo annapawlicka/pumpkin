@@ -1,0 +1,92 @@
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+.y.axis {
+    font-size: 9px
+}
+
+.x.axis {
+    font-size: 9px;
+}
+.x.axis path {
+  display: none;
+}
+
+.number-widget, .number-widget panel-body {
+    max-height: 100%;
+    font-size: 80%;
+    text-align: center;
+}
+
+.rounded {
+    border-radius: 3px;
+}
+
+.row-centered {
+    text-align: center;
+}
+
+.col-centered {
+    display: inline-block;
+    float: none;
+    text-align: left;
+    margin-right: -4px;
+}
+
+.dashboard {
+    background: silver;
+    min-height: 600px;
+    padding-top: 15px;
+    padding-bottom: 15px;
+}
+
+.view {
+    background: #EFEFEF;
+    height: 100%;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+.chart {
+    width: 100%;
+    height: 300px;
+    background:  white;
+}
+
+.table-view {
+    width: 100%;
+    height: 300px;
+    background:  white;
+}
+
+.jumbotron {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    margin-bottom: 0px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    background: #EFEFEF;
+}
+
+.jumbotron, .h1 {
+    font-size: 1em;
+}
+
+.pad-top {
+    padding-top: 10px;
+}
+
+.navbar {
+    margin-bottom: 0px;
+    background: #EFEFEF;
+    border-radius: 0;
+}
+
+.panel-heading {
+    height: 45px;
+}
