@@ -12,7 +12,8 @@
             [environ.core :refer [env]]
             [org.httpkit.server :refer [run-server] :as kit]
             [org.httpkit.client :as http]
-            [clojure.data.json :as json]))
+            [clojure.data.json :as json]
+            [net.cgrand.enlive-html :refer [deftemplate]]))
 
 (let [{:keys [ch-recv send-fn ajax-post-fn
               ajax-get-or-ws-handshake-fn] :as sente-info}
@@ -33,6 +34,9 @@
   [req]
   (get-in req [:session :uid]))
 
+(deftemplate page
+  (io/resource "index.html") [] [:body] (if is-dev? inject-devmode-html identity))
+
 (defn index
   "Handle index page request. Injects session uid if needed."
   [req]
@@ -40,7 +44,7 @@
    :session (if (session-uid req)
               (:session req)
               (assoc (:session req) :uid (unique-id)))
-   :body (slurp "resources/index.html")})
+   :body (page)})
 
 (defroutes my-routes
   (-> (routes

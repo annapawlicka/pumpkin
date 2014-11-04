@@ -7,6 +7,12 @@
 
 (enable-console-print!)
 
+(defn default-size [id]
+  (let [e (.getElementById js/document id)
+        x (.-clientWidth e)
+        y (.-clientHeight e)]
+    {:width x :height y}))
+
 (defn sort-by-field [field]
   (fn [x y]
     (let [v1 (first (aget x field))
@@ -16,9 +22,10 @@
      (< v1 v2) 1
      (= v1 v2) 0))))
 
-(defn- draw-chart [cursor {:keys [div bounds x-axis y-axis plot series color]}]
-  (let [{:keys [id width height]} div
-        data         (clj->js (get cursor "data"))
+(defn- draw-chart [data div {:keys [id bounds x-axis y-axis plot series color event-type]}]
+  (let [width        (or (:width div) (:width (default-size id)))
+        height       (or (:height div) (:height (default-size id)))
+        data         (aget data "data")
         Chart        (.-chart js/dimple)
         svg          (.newSvg js/dimple (str "#" id) width height)
         dimple-chart (.setBounds (Chart. svg) (:x bounds) (:y bounds) (:width bounds) (:height bounds))
@@ -30,8 +37,8 @@
     (aset s "data" (clj->js data))
     (aset dimple-chart "defaultColors" (to-array [(new color-fn color)]))
     (.addOrderRule x (sort-by-field y-axis))
-    (.draw dimple-chart)
-    (-> legend .-shapes (.selectAll "text") (.text y-axis))
+    (.draw dimple-chart (when (= event-type :click) 1000))
+    (-> legend .-shapes (.selectAll "text") (.text (clojure.string/capitalize y-axis)))
     ;; Rotate x-axis labels
     (.attr (.selectAll (.-shapes x) "text") "transform" " rotate(45 10 25)")
     (.attr (.selectAll (.-shapes x) "text") "x" 4)
@@ -39,27 +46,32 @@
 
 (defn bar-chart
   "Simple bar chart done using dimple.js"
-  [cursor owner {:keys [chart] :as opts}]
+  [{:keys [data div]} owner {:keys [id] :as opts}]
   (reify
+    om/IWillMount
+    (will-mount [_]
+      (.addEventListener js/window
+                         "resize" (fn []
+                                    (let [e (.getElementById js/document id)
+                                          x (.-clientWidth e)
+                                          y (.-clientHeight e)]
+                                      (om/update! div :size {:width x :height y})))))
     om/IRender
     (render [_]
-      (let [{:keys [id width height]} (:div chart)]
-        (html
-         [:div.chart {:id id}])))
+      (html
+       [:div.chart {:id id}]))
     om/IDidMount
     (did-mount [_]
-      (let [id (-> chart :div :id)
-            n (.getElementById js/document id)]
+      (let [n (.getElementById js/document id)]
         (while (.hasChildNodes n)
           (.removeChild n (.-lastChild n))))
-      (draw-chart cursor chart))
+      (draw-chart data div opts))
     om/IDidUpdate
     (did-update [_ _ _]
-      (let [id (-> chart :div :id)
-            n (.getElementById js/document id)]
+      (let [n (.getElementById js/document id)]
         (while (.hasChildNodes n)
           (.removeChild n (.-lastChild n))))
-      (draw-chart cursor chart))))
+      (draw-chart data div opts))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SVG
@@ -90,10 +102,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Draw chart
 
-(defn- draw [data hover-chan]
-  (let [margin          {:top 10 :right 10 :bottom 55 :left 50}
-        width           (-> (.getElementById js/document "chart") .-clientWidth (- (:left margin) (:right margin)))
-        height          (-> (.getElementById js/document "chart") .-clientHeight (- (:top margin) (:bottom margin)))
+(defn- draw [data hover-chan size id event-type]
+  (let [margin          {:top 10 :right 40 :bottom 55 :left 50}
+        width            (-> (or (:width size) (:width (default-size id)))  (- (:left margin) (:right margin)))
+        height           (-> (or (:height size) (:height (default-size id))) (- (:top margin) (:bottom margin)))
         ;; Grouped by type and stacked
         grouped         (mapv (fn [[k v]] {:data v :name (name k)}) (group-by :type data))
         series          (map :name grouped)
@@ -111,30 +123,25 @@
         colors          (-> js/d3 .-scale (.ordinal) (.range (to-array ["#4575b4" "#d62728"])))
         ;; X
         x-scale         (-> js/d3 .-time (.scale) (.domain (to-array [min-date max-date])) (.range (to-array [0 width])))
-        x-axis          (-> js/d3 (.-svg) (.axis) (.scale x-scale) (.orient "bottom"))
+        x-axis          (-> js/d3 (.-svg) (.axis) (.scale x-scale) (.orient "bottom")
+                            (.ticks 52) (.tickSize 0) (.tickFormat (-> js/d3 .-time (.format "%d %B"))))
         ;; Y
         y-scale         (-> js/d3 .-scale (.linear) (.domain (to-array [0 max-value])) (.range (to-array [height 0])))
         y-axis          (-> js/d3 (.-svg) (.axis) (.scale y-scale) (.tickSize 10) (.orient "left"))
         ;; Main chart
-        svg             (create-svg "#chart" width height margin)
-        vertical        (-> (-> js/d3 (.select ".chart"))
-                            (.append "div")
-                            (.attr "class" "remove")
-                            (.style "position" "absolute")
-                            (.style "z-index" "19")
-                            (.style "width" 0)
-                            (.style "height" (str (+ height (:top margin)) "px"))
-                            (.style "top" (str (+ (:top margin) (:bottom margin) 5)  "px"))
-                            (.style "bottom" (str 0 "px"))
-                            (.style "left" "0px")
-                            (.style "background" "grey"))]
+        svg             (create-svg (str "#" id) width height margin)]
 
     ;; X axis and labels
     (-> svg
         (.append "g")
         (.attr "class" "x axis")
         (.attr "transform" (str "translate(0," height ")"))
-        (.call x-axis))
+        (.call x-axis)
+        (.selectAll "text")
+        (.style "text-anchor" "start")
+        (.attr "dx" "5")
+        (.attr "dy" ".25em")
+        (.attr "transform" (fn [d] "rotate(45)")))
 
     ;; Y-axis and labels
     (-> svg
@@ -154,25 +161,23 @@
           (.data (fn [d] d))
           (.enter)
           (.append "rect")
-          (.on "click" (fn [d] (let [bar     (js* "this")
-                                     get-val (fn [n] (-> n  .-baseVal .-value))
-                                     [x y]   (js->clj (-> js/d3 (.mouse bar)))
-                                     x1      (-> bar .-x get-val)
-                                     width   (-> bar .-width get-val)
-                                     left    (+ x1 (/ width 2))]
-                                 (.style vertical "width" "2px")
-                                 (.style vertical "left" (str (+ left (:left margin) (:right margin) 5) "px"))
-                                 (put! hover-chan {:event :click :v (.-x d) :d d}))))
-          (.on "mouseout" (fn [_] (put! hover-chan {:event :mouseout})))
-          (.on "mouseover" (fn [d] (let [[x y] (js->clj (-> js/d3 (.mouse (js* "this"))))]
-                                     (put! hover-chan {:event :mouseover :v (.-x d) :d d}))))
+          (.on "click" (fn [d] (when (= event-type :click)
+                                 (let [bar     (js* "this")
+                                       get-val (fn [n] (-> n  .-baseVal .-value))
+                                       [x y]   (js->clj (-> js/d3 (.mouse bar)))
+                                       x1      (-> bar .-x get-val)]
+                                   (put! hover-chan {:event :click :v (.-x d) :d d})))))
+          (.on "mouseout" (fn [_] (when (= event-type :hover)
+                                    (put! hover-chan {:event :mouseout}))))
+          (.on "mouseover" (fn [d] (when (= event-type :hover)
+                                     (let [[x y] (js->clj (-> js/d3 (.mouse (js* "this"))))]
+                                       (put! hover-chan {:event :mouseover :v (.-x d) :d d})))))
           ;; Transitions
-          (.transition)
-          (.duration 500)
-          (.ease "cubic")
           (.attr "height" 0)
+          (.attr "y" height)
           (.transition)
-          (.duration 500)
+          (.duration 1000)
+          (.ease "cubic-in-out")
           ;; Bars
           (.attr "fill-opacity" .7)
           (.attr "x" (fn [d] (x-scale (aget d "x"))))
@@ -189,31 +194,49 @@
         (.attr "transform" (fn [d i] (str "translate(0," (* i 10) ")")))
         ;; Rects
         (.append "rect")
-        (.attr "x" (- width 38))
+        (.attr "x" (- width 18))
         (.attr "height" 8)
         (.attr "width" 8)
-        (.style "fill" colors)
-        ;; Labels
+        (.style "fill" colors))
+       ;; Labels
+    (-> (.selectAll svg ".legend")
         (.append "text")
-        (.attr "x" (- width 38))
-        (.attr "y" 30)
-        (.attr "dy" ".35em")
-        (.style "text-anchor" "end")
-        (.text (fn [d] d)))
-
-))
+        (.attr "x" (- width 6))
+        (.attr "y" 8)
+        (.style "font-size" 10)
+        (.style "text-anchor" "start")
+        (.text (fn [d] (if (= d 0) "Additions" "Deletions"))))))
 
 (defn stacked-bar-chart
   "Stacked bar chart done in d3.js"
-  [chart owner opts]
+  [chart owner {:keys [id]}]
   (reify
+    om/IWillMount
+    (will-mount [_]
+      (.addEventListener js/window
+                       "resize" (fn []
+                                  (let [e (.getElementById js/document id)
+                                        x (.-clientWidth e)
+                                        y (.-clientHeight e)]
+                                    (om/update! chart :size {:width x :height y})))))
     om/IRender
     (render [_]
-      (html [:div.chart {:id "chart" }])) ;; TODO pass id in opts
+      (html [:div.chart {:id id}]))
     om/IDidMount
     (did-mount [_]
-      (let [n (.getElementById js/document "chart")]
+      (let [n (.getElementById js/document id)]
         (while (.hasChildNodes n)
           (.removeChild n (.-lastChild n))))
-      (let [data (:data chart)]
-        (draw data (:hover-chan opts))))))
+      (let [data         (:data chart)
+            event-type   (-> chart :event-toggle :current)
+            event-chan   (om/get-shared owner :event-chan)]
+        (draw data event-chan (:size chart) id event-type)))
+    om/IDidUpdate
+    (did-update [_ _ _]
+      (let [n (.getElementById js/document id)]
+        (while (.hasChildNodes n)
+          (.removeChild n (.-lastChild n))))
+      (let [data         (:data chart)
+            event-type   (-> chart :event-toggle :current)
+            event-chan   (om/get-shared owner :event-chan)]
+        (draw data event-chan (:size chart) id event-type)))))

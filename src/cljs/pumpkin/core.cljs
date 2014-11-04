@@ -27,29 +27,35 @@
 
 (defonce app-state
   (atom {:state :unknown
-         :menu {:location :hecuba}
-         :rota {}
-         :repositories {:view {:current :charts}
-                        :github {:issues {:title "Open Issues"
-                                          :value "N/A"
-                                          :refresh-rate 21600000 ;; 6 hours
-                                          :updated-at nil}
-                                 :pulls {:title "Open Pull Requests"
-                                         :value "N/A"
-                                         :refresh-rate 21600000 ;; 6 hours
-                                         :updated-at nil}
-                                 :code-frequency {:title "Code Frequency"
-                                                  :data (parse-frequencies dev/github-frequencies)
-                                                  :refresh-rate 21600000
-                                                  :updated-at nil}
-                                 :contributors {:title "Contributors"
-                                                :data  dev/contributors
-                                                :refresh-rate 21600000
-                                                :updated-at nil}}}
-         :clock {:time (numbers/get-time nil)}}))
+         :repository {:header {:selected-week (common/unparse-date (common/get-date-from-week dev/first-week)
+                                                                   "yyyy-MM-dd")}
+                      :issues {:title "Open Issues"
+                               :value "N/A"
+                               :refresh-rate 21600000 ;; 6 hours
+                               :updated-at nil}
+                      :pulls {:title "Open Pull Requests"
+                              :value "N/A"
+                              :refresh-rate 21600000 ;; 6 hours
+                              :updated-at nil}
+                      :code-frequency {:title "Code Frequency"
+                                       :div {}
+                                       :event-toggle {:current :hover}
+                                       :data [] ;; (parse-frequencies dev/github-frequencies)
+                                       :refresh-rate 21600000
+                                       :updated-at nil}
+                      :contributors {:title "Contributors"
+                                     :view {:current :charts}
+                                     :data [] ;; dev/contributors
+                                     :div {:width "100%" :height "100%"}
+                                     :refresh-rate 21600000
+                                     :updated-at nil}}
+         :clock {:time (common/get-time nil)}}))
 
-(defn view-toggle []
-  (om/ref-cursor (-> (om/root-cursor app-state) :repositories :view)))
+(defn header []
+  (om/ref-cursor (-> (om/root-cursor app-state) :repository :header)))
+
+(defn event-type []
+  (om/ref-cursor (-> (om/root-cursor app-state) :repository :code-frequency :event-toggle)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; WebSocket events                                                                      ;;
@@ -69,22 +75,24 @@
   (om/update! app :state state))
 
 (defmethod handle-event :dashboard/github-issues [[_ msg] app owner]
-  (om/update! app [:repositories :github :issues :updated-at] (new js/Date))
-  (om/update! app [:repositories :github :issues :value] (count msg)))
+  (om/update! app [:repository :issues :updated-at] (new js/Date))
+  (om/update! app [:repository :issues :value] (count msg)))
 
 (defmethod handle-event :dashboard/github-pulls [[_ msg] app owner]
-  (om/update! app [:repositories :github :pulls :updated-at] (new js/Date))
-  (om/update! app [:repositories :github :pulls :value] (count msg)))
+  (om/update! app [:repository :pulls :updated-at] (new js/Date))
+  (om/update! app [:repository :pulls :value] (count msg)))
 
 (defmethod handle-event :dashboard/github-code-frequency [[_ msg] app owner]
-  (om/update! app [:github :code-freuqency :updated-at] (new js/Date))
-  (om/update! app [:repositories :github :code-frequency :data] (->  msg
-                                                                     parse-frequencies)))
+  (om/update! app [:repository :code-freuqency :updated-at] (new js/Date))
+  (om/update! app [:repository :code-frequency :data] (-> msg parse-frequencies)))
 
 (defmethod handle-event :dashboard/github-contributors [[_ msg] app owner]
-  (om/update! app [:github :contributors :updated-at] (new js/Date))
-  (om/update! app [:repositories :github :contributors :data] (->  msg
-                                                                   js->clj)))
+  (om/update! app [:repository :contributors :updated-at] (new js/Date))
+  (om/update! app [:repository :contributors :data] (->  msg js->clj))
+  (om/update! app [:repository :contributors :selected-week] (-> msg js->clj
+                                                                 first :weeks
+                                                                 first :w common/get-date-from-week
+                                                                 (common/unparse-date "yyyy-MM-dd"))))
 
 (defmethod handle-event :default [[id msg] app owner])
 
@@ -101,136 +109,204 @@
         (recur (<! ch-chsk)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Navigation                                                                            ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn nav-bar [cursor owner]
-  (reify
-    om/IRender
-    (render [_]
-      (log "Rendering: nav-bar")
-      (let [location (:location cursor)]
-        (n/navbar
-         {:class-name "navbar"}
-         (n/nav
-          {:collapsible? true}
-          (n/nav-item {:key :rota :on-select (fn [e] (om/update! cursor :location e))} "Rota")
-          (n/nav-item {:key :hecuba :on-select (fn [e] (om/update! cursor :location e))} "Hecuba"))
-         (html [:p.pull-right.pad-top "Showing: " (name location)]))))))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Views                                                                                 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmulti parse-contributors (fn [data view] (log "parsing contributors for view: " view) view))
-(defmethod parse-contributors :table [data _]
-  (let [d (mapv (fn [user]
-                     (assoc user :weeks (mapv #(assoc % :w (common/get-date-from-week (:w %))) (:weeks user))))
-                   data)]
-    d))
+(defmulti parse-contributors (fn [view] view))
+(defmethod parse-contributors :table [_]
+  (fn [data]
+    (let [d (mapv (fn [user]
+                    (assoc user :weeks (mapv #(assoc % :w (common/get-date-from-week (:w %))) (:weeks user))))
+                  data)]
+      d)))
 
-(defmethod parse-contributors :charts [data _]
-  (let [weeks (map :w (:weeks (first data)))
-        d  (mapv (fn [week]
-                      (hash-map :week (common/get-date-from-week week)
-                                :data (mapv (fn [d]
-                                              (let [weekly-stat (-> (filter #(= (:w %) week) (:weeks d)) first)]
-                                                (hash-map :username (-> d :author :login)
-                                                          :deletions (-> weekly-stat :d)
-                                                          :additions (-> weekly-stat :a)
-                                                          :commits (-> weekly-stat :c)))) data))) weeks)]
-    d))
-
-(defn team-members-stats-view [cursor owner {:keys [mult-chan]}]
-  (om/component
-   (log "Rendering: team-members-stats-view")
-   (html
-    [:div.table-view
-     (for [member (parse-contributors cursor :table)]
-       (let [c (chan (sliding-buffer 100))]
-         [:div.col-sm-4.col-centered
-          (om/build numbers/team-member member {:key :author :init-state {:chan (tap mult-chan c)}})]))])))
+(defmethod parse-contributors :charts [_]
+  (fn [cursor]
+    (let [{:keys [data div]} cursor
+          weeks (map :w (:weeks (first data)))
+          d  (mapv (fn [week]
+                     (hash-map :week (common/get-date-from-week week)
+                               :data (mapv (fn [d]
+                                             (let [weekly-stat (-> (filter #(= (:w %) week) (:weeks d)) first)]
+                                               (hash-map :username (-> d :author :login)
+                                                         :deletions (-> weekly-stat :d)
+                                                         :additions (-> weekly-stat :a)
+                                                         :commits (-> weekly-stat :c)))) data))) weeks)]
+      (assoc cursor :data d))))
 
 (defn chart-stats [cursor owner {:keys [y-axis color]}]
   (reify
     om/IInitState
     (init-state [_]
-      {:value {}
-       :click false})
+      {:c (chan (sliding-buffer 100))
+       :value (-> cursor :data first :week)})
     om/IWillMount
     (will-mount [_]
-      (go-loop []
-        (let [event-chan         (om/get-state owner :chan)
-              {:keys [event v]}  (<! event-chan)
-              bisect             (-> js/d3 (.bisector (fn [d] (aget d "week"))) .-right)]
-          (cond
-           (= event :click) (let [data   (-> cursor clj->js)
-                                  index  (bisect data v 1)
-                                  value  (js->clj (aget data index))]
-                                  (om/set-state! owner :value value)
-                                  (om/set-state! owner :click true))))
-        (recur)))
+      (let [c              (om/get-state owner :c)
+            mult-chan      (om/get-shared owner :mult-chan)
+            week           (header)]
+        (tap mult-chan c)
+        (go-loop []
+          (let [event-chan         (om/get-state owner :c)
+                {:keys [event v]}  (<! event-chan)]
+            (cond
+             (= event :mouseover) (when v
+                                    (om/set-state! owner :value v)
+                                    (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))
+             (= event :click)      ((om/set-state! owner :value v)
+                                    (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))))
+          (recur))))
     om/IRenderState
     (render-state [_ state]
-      (log "Rendering: chart-stats")
       (html
-       [:div
-        (om/build charts/bar-chart (if (om/get-state owner :click) (:value state) [])
-                  {:opts {:chart {:div {:id (str "chart-" y-axis) :width "100%" :height 300}
-                                  :bounds {:x "10%" :y "5%" :width "80%" :height "75%"}
-                                  :x-axis "username"
-                                  :y-axis y-axis
-                                  :plot js/dimple.plot.bar
-                                  :color color}}})]))))
+       (let [id (str "chart-" y-axis)]
+         [:div
+          (let [value          (common/timestamp->value (:value state) "week" (:data cursor))
+                selected-event (om/observe owner (event-type))]
+            (om/build charts/bar-chart {:data value :div (:div cursor)}
+                      {:opts {:id id
+                              :bounds {:x "15%" :y "5%" :width "80%" :height "75%"}
+                              :x-axis "username"
+                              :y-axis y-axis
+                              :plot js/dimple.plot.bar
+                              :color color
+                              :event-type (:current selected-event)}}))])))
+    om/IWillUnmount
+    (will-unmount [_]
+      (untap (om/get-shared owner :mult-chan) (om/get-state owner :c)))))
 
-(defn charts-stats-view [cursor owner {:keys [mult-chan]}]
-  (om/component
-   (log "Rendering: charts-stats-view")
-   (html
-    [:div.chart
-     (let [data (parse-contributors cursor :charts)]
-       (for [item [{:k :deletions :color "#d62728"} {:k :additions :color "#4575b4"}]]
-         (let [c (chan (sliding-buffer 100))]
-           [:div.col-centered
-            (om/build chart-stats data {:key (:k item) :init-state {:chan (tap mult-chan c)}
-                                        :opts {:y-axis (name (:k item))
-                                               :color (:color item)}})])))])))
-
-(defn table-stats-view [cursor owner {:keys [mult-chan]}]
-  (om/component
-   (log "Rendering: table-stats-view")
-   (html
-    [:div.chart
-     (let [data (parse-contributors cursor :charts)]
-       (for [item [{:k :deletions :color "#d62728"} {:k :additions :color "#4575b4"}]]
-         (let [c (chan (sliding-buffer 100))]
-           [:div.col-centered
-            [:table.table
-             ]
-            ])))])))
-
-(defmulti code-frequency-stats (fn [cursor owner opts]
-                                 (let [{:keys [current-view data]} cursor]
-                                   (log "rendering: code-frequency-stats for " current-view)
-                                   current-view)))
-(defmethod code-frequency-stats :charts [{:keys [data]} owner {:keys [mult-chan]}]
+(defn chart-stats-view [cursor owner]
   (om/component
    (html
-    [:div.chart
-     (om/build charts-stats-view data {:opts {:mult-chan mult-chan}})])))
+    [:div.row-centered
+     (for [item [{:k :deletions :color "#d62728"} {:k :additions :color "#4575b4"}]]
+       [:div.col-centered {:style {:width "50%"}}
+        (om/build chart-stats cursor {:key (:k item)
+                                      :opts {:y-axis (name (:k item))
+                                             :color (:color item)}})])])))
 
-(defmethod code-frequency-stats :table [{:keys [data]} owner {:keys [mult-chan]}]
+(defn team-member
+  "Shows team member's info and stats."
+  [cursor owner opts]
+  (reify
+    om/IInitState
+    (init-state [_]
+      {:c     (chan (sliding-buffer 100))
+       :value (-> cursor :weeks first :w)})
+    om/IWillMount
+    (will-mount [_]
+      (let [mult-chan (om/get-shared owner :mult-chan)
+            c         (om/get-state owner :c)
+            week      (header)]
+        (tap mult-chan c)
+        (go-loop []
+          (let [event-chan         (om/get-state owner :c)
+                {:keys [event v]}  (<! event-chan)]
+            (cond
+             (= event :click)      (when v
+                                     (om/set-state! owner :value v)
+                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))
+             (= event :mouseover)  (when v
+                                     (om/set-state! owner :value v)
+                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))))
+          (recur))))
+    om/IRenderState
+    (render-state [_ state]
+      (let [value (common/timestamp->value (:value state) "w" (:weeks cursor))
+            {:keys [author]} cursor]
+        (html
+         [:div.col-sm-4.col-centered {:style {:font-size "80%"}}
+          [:div.panel.panel-default
+           [:div.panel-heading
+            [:h4.panel-title [:p (:login author)] [:p (when-let [uri (:avatar_url author)]
+                                [:img.img-thumbnail.table-image.pull-right
+                                 {:src uri :style {:max-width "25%"}}])]]]
+           [:div.panel-body {:style {:height 90}}
+            [:div
+             [:p "Additions: " (aget value "a")]
+             [:p "Deletions: " (aget value "d")]
+             [:p "Total commits: " (aget value "c")]]]]])))
+    om/IWillUnmount
+    (will-unmount [_]
+      (untap (om/get-shared owner :mult-chan) (om/get-state owner :c)))))
+
+(defn team-members-stats-view [cursor owner]
+  (om/component
+   (html
+    [:div.table-view
+     [:div
+      (om/build-all team-member cursor)]])))
+
+(defn table-row [cursor owner opts]
+  (reify
+    om/IInitState
+    (init-state [_]
+      {:c (chan (sliding-buffer 100))
+       :value (-> cursor :weeks first :w)})
+    om/IWillMount
+    (will-mount [_]
+      (let [mult-chan (om/get-shared owner :mult-chan)
+            c         (om/get-state owner :c)
+            week      (header)]
+        (tap mult-chan c)
+        (go-loop []
+          (let [event-chan         (om/get-state owner :c)
+                {:keys [event v]}  (<! event-chan)]
+            (cond
+             (= event :click)      (when v
+                                     (om/set-state! owner :value v)
+                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))
+             (= event :mouseover)  (when v
+                                     (om/set-state! owner :value v)
+                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))))
+          (recur))))
+    om/IRenderState
+    (render-state [_ state]
+      (let [mouseover (:mouseover state)
+            value     (:value state)]
+        (html
+         (let [value (common/timestamp->value (:value state) "w" (:weeks cursor))]
+           [:div {:style {:font-size "80%"}}
+            [:tr
+             [:td (-> cursor :author :login)]
+             [:td (aget value "a")]
+             [:td (aget value "d")]
+             [:td (aget value "c")]]]))))
+    om/IWillUnmount
+    (will-unmount [_]
+      (untap (om/get-shared owner :mult-chan) (om/get-state owner :c)))))
+
+(defn table-stats-view [cursor owner]
+  (om/component
+   (html
+    [:div.table-view
+     [:div.col-centered
+      [:table.table
+       [:thead
+        [:tr [:th "Author"] [:th "Additions"] [:th "Deletions"] [:th "Total Commits"]]]
+       [:tbody
+        (om/build-all table-row cursor)]]]])))
+
+(defmulti code-frequency-stats (fn [cursor owner] (-> cursor :view :current)))
+
+(defmethod code-frequency-stats :charts [cursor owner]
   (om/component
    (html
     [:div
-     (om/build table-stats-view data {:opts {:mult-chan mult-chan}})])))
+     (when (seq (:data cursor))
+       (om/build chart-stats-view {:data (:data cursor) :div (:div cursor)} {:fn (parse-contributors :charts)}))])))
 
-(defmethod code-frequency-stats :cards [{:keys [data]} owner {:keys [mult-chan]}]
+(defmethod code-frequency-stats :table [cursor owner]
   (om/component
    (html
     [:div
-     (om/build team-members-stats-view data {:opts {:mult-chan mult-chan}})])))
+     (om/build table-stats-view (:data cursor) {:fn (parse-contributors :table)})])))
+
+(defmethod code-frequency-stats :cards [cursor owner]
+  (om/component
+   (html
+    [:div
+     (om/build team-members-stats-view (:data cursor) {:fn (parse-contributors :table)})])))
 
 (defn send-messages [urls]
   (doseq [{:keys [k url]} urls]
@@ -238,35 +314,46 @@
 
 (defn toggles [cursor owner]
   (om/component
-   (log "Rendering: toggles")
-   (let [toggle  (om/observe owner (view-toggle))
-         current (:current toggle)]
+   (let [current-view (-> cursor :view :current)
+         week         (:selected-week (om/observe owner (header)))]
      (html
       (b/toolbar {}
-       (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current :table) "active" ""))
+       (html [:div.pull-left (str "Showing week: " week)])
+       (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current-view :table) "active" ""))
                   :key :table
                   :on-click (fn [e]
-                              (om/update! toggle :current :table))}
+                              (om/update! cursor [:view :current] :table))}
                  "Table")
-       (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current :cards) "active" ""))
+       (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current-view :cards) "active" ""))
                   :key :cards
                   :on-click (fn [e]
-                              (om/update! toggle :current :cards))}
+                              (om/update! cursor [:view :current] :cards))}
                  "Cards")
-       (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current :charts) "active" ""))
+       (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current-view :charts) "active" ""))
                   :key :charts
                   :on-click (fn [e]
-                              (om/update! toggle :current :charts))}
+                              (om/update! cursor [:view :current] :charts))}
                  "Charts"))))))
+
+(defn toggles2 [cursor owner]
+  (om/component
+   (let [current-interaction (:current cursor)]
+     (html
+      (b/toolbar {}
+                 (html [:div.pull-left "Additions and deletions per week"])
+                 (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current-interaction :hover) "active" ""))
+                            :key :table
+                            :on-click (fn [e]
+                                        (om/update! cursor :current :hover))}
+                           "Hover")
+                 (b/button {:bs-size "xsmall" :class (str "pull-right " (if (= current-interaction :click) "active" ""))
+                            :key :cards
+                            :on-click (fn [e]
+                                        (om/update! cursor :current :click))}
+                           "Click"))))))
 
 (defn repository-view [cursor owner {:keys [url]}]
   (reify
-    om/IInitState
-    (init-state [_]
-      (let [hover-chan (chan (sliding-buffer 100))
-            m          (mult hover-chan)]
-        {:hover-chan hover-chan
-         :mult-chan m}))
     om/IDidMount
     (did-mount [_]
       (send-messages [{:k :dashboard/github-issues          :url (str url "/issues?state=open") }
@@ -275,53 +362,33 @@
                       {:k :dashboard/github-contributors    :url (str url "/stats/contributors")}]))
     om/IRender
     (render [_]
-      (log "Rendering: repository-view")
       (html
        [:div
-        (let [{:keys [hover-chan mult-chan]} (om/get-state owner)
-              toggle (om/observe owner (view-toggle))
-              current-view (:current toggle)]
-          [:div.col-md-12.view
-           [:div.col-md-6 ;; LEFT
-            [:div.row
-             [:div.pad-top
-              (p/panel {:header "Additions and deletions per week"}
-                       (om/build charts/stacked-bar-chart (:code-frequency cursor)
-                                 {:opts {:hover-chan hover-chan}}))]]
-            [:div.row.row-centered
-              [:div.col-sm-4.col-centered
-               (om/build numbers/changing-color-number (:issues cursor)
-                         {:opts {:scale {:bad-value 100 :good-value 0}}})]
-              [:div.col-sm-4.col-centered
-               (om/build numbers/changing-color-number (:pulls cursor)
-                         {:opts {:scale {:bad-value 100 :good-value 0}}})]]]
-           [:div.col-md-6 ;; RIGHT
-            [:div.row.row-centered.pad-top
-             (p/panel {:header (om/build toggles nil)}
-                      (om/build code-frequency-stats {:data (-> cursor :contributors :data)
-                                                      :current-view current-view}
-                        {:opts {:mult-chan mult-chan}}))]]])]))))
+        [:div.col-md-12
+         [:div.row.view
+          [:div.col-md-6
+           (p/panel {:header (om/build toggles2 (-> cursor :code-frequency :event-toggle))}
+                    (om/build charts/stacked-bar-chart (:code-frequency cursor)
+                              {:opts {:id "stacked-bar-chart"}}))]
+          [:div.col-md-6
+           (p/panel {:header (om/build toggles (:contributors cursor))}
+                    (om/build code-frequency-stats (:contributors cursor)))]]
+         [:div.row.view
+          [:div.row.row-centered
+           [:div.col-sm-4.col-centered
+            (om/build numbers/simple-stats-card (:issues cursor))]
+           [:div.col-sm-4.col-centered
+            (om/build numbers/simple-stats-card (:pulls cursor))]]]]]))))
 
-(defn rota-view [cursor owner]
+(defn clock [cursor owner {:keys [formatter]}]
   (reify
+    om/IWillMount
+    (will-mount [_]
+      (js/setInterval (fn [] (om/update! cursor :time (common/get-time formatter))) 1000))
     om/IRender
     (render [_]
-      (log "Rendering: rota-view")
       (html
-       [:div "Rota"]))))
-
-(defmulti current-view (fn [app owner] (-> app :menu :location)))
-
-(defmethod current-view :rota [app owner]
-  (om/component (html [:div (om/build rota-view (-> app :rota))])))
-
-(defmethod current-view :hecuba [app owner]
-  (om/component (html [:div (om/build repository-view (-> app :repositories :github)
-                                      {:opts {:url "https://api.github.com/repos/mastodonc/kixi.hecuba"}})])))
-
-;; TODO
-;; 1. legend to chart (red deletions, blue additions)
-;; 3. add a component with other stats, e.g. c4, kaylee
+       [:div (:time cursor)]))))
 
 (defn dashboard [app owner]
   (reify
@@ -331,11 +398,10 @@
        [:div
         [:div.container-fluid.dashboard
          ;; Jumbotron
-         (r/jumbotron {} (html [:h1 "Team Dashboard" [:small.pull-right (om/build numbers/clock (:clock app))]]))
-         ;; Navbar
-         (om/build nav-bar (:menu app))
-         ;; Current View
-         (om/build current-view app)]]))))
+         (r/jumbotron {} (html [:h1 "Team Dashboard" [:small.pull-right (om/build clock (:clock app))]]))
+         ;; Repository View
+         (om/build repository-view (-> app :repository)
+                   {:opts {:url "https://api.github.com/repos/mastodonc/kixi.hecuba"}})]]))))
 
 (defn application [cursor owner]
   (reify
@@ -351,7 +417,9 @@
           :unknown [:div "Loading dashboard..."])]))))
 
 (defn main []
-  (om/root
-    application
-    app-state
-    {:target (. js/document (getElementById "app"))}))
+  (let [event-chan (chan (sliding-buffer 100))]
+    (om/root
+     application
+     app-state
+     {:target (. js/document (getElementById "app"))
+      :shared {:event-chan event-chan :mult-chan (mult event-chan)}})))

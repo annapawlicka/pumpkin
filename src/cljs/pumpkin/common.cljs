@@ -26,3 +26,18 @@
   "Turn unix representation of a first day of a week into Date."
   [w]
   (new js/Date (* w 1000)))
+
+(defn timestamp->value [timestamp field data]
+  (let [bisect   (-> js/d3 (.bisector (fn [d] (aget d field))) .-right)
+        data     (clj->js data)
+        index    (bisect data timestamp)]
+    (clj->js (aget data (dec index)))))
+
+(defn get-time [formatter]
+  (let [date      (js/Date.)
+        f         (or formatter "dth MMMM yyyy HH:mm:ss")
+        formatted (unparse-date date f)]
+    formatted))
+
+(defn refresh-rate->hours [rate]
+  (mod (/ rate (* 1000 60 60)) 24))
