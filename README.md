@@ -1,5 +1,21 @@
 # pumpkin
 
+Deployed to heroku: [pumpkin](http://evening-citadel-3933.herokuapp.com/).
+
+A sample dashboard demo written with
+[Sente](https://github.com/ptaoussanis/sente),
+[Om](https://github.com/swannodette/om), and data visualisation
+libraries [D3.js](http://d3js.org/) and
+[dimple.js](http://dimplejs.org/).
+
+It demonstrates how to connect Om and Sente to push new data to our
+client and how to create data vis components and make them interact with
+each other. Data visualised comes from GitHub stats of an open source
+project - no authorisation neccessary.
+
+It's built on top of an awesome leiningen
+template [chestnut](https://github.com/plexus/chestnut) - a real life saver!
+
 
 ## Development
 
@@ -22,32 +38,9 @@ Running `(browser-repl)` starts the Weasel REPL server, and drops you
 into a ClojureScript REPL. Evaluating expressions here will only work
 once you've loaded the page, so the browser can connect to Weasel.
 
-When you see the line `Successfully compiled "resources/public/app.js"
-in 21.36 seconds.`, you're ready to go. Browse to
+When you see the line `Successfully compiled "resources/public/pumpkin.js"
+in 15.509 seconds.`, you're ready to go. Browse to
 `http://localhost:10555` and enjoy.
-
-**Attention: It is not longer needed to run `lein fighwheel`
-  separately. This is now taken care of behind the scenes**
-
-## Trying it out
-
-If all is well you now have a browser window saying 'Hello Chestnut',
-and a REPL prompt that looks like `cljs.user=>`.
-
-Open `resources/public/css/style.css` and change some styling of the
-H1 element. Notice how it's updated instantly in the browser.
-
-Open `src/cljs/chestnut/core.cljs`, and change `dom/h1` to
-`dom/h2`. As soon as you save the file, your browser is updated.
-
-In the REPL, type
-
-```
-(ns chestnut.core)
-(swap! app-state assoc :text "Interactivity FTW")
-```
-
-Notice again how the browser updates.
 
 ## Deploying to Heroku
 
@@ -82,7 +75,6 @@ Now your app is running at
 
 ## License
 
-Copyright © 2014 FIXME
+Copyright © 2014 Anna Pawlicka
 
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+Distributed under the Eclipse Public License.
