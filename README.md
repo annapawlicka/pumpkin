@@ -2,6 +2,8 @@
 
 Deployed to heroku: [pumpkin](http://evening-citadel-3933.herokuapp.com/).
 
+![Alt text](http://i.imgur.com/uRmH0eH.png "Sample dashboard")
+
 A sample dashboard demo written with
 [Sente](https://github.com/ptaoussanis/sente),
 [Om](https://github.com/swannodette/om), and data visualisation
