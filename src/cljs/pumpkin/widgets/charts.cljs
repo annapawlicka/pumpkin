@@ -159,17 +159,22 @@
           (.data (fn [d] d))
           (.enter)
           (.append "rect")
+          (.attr "class" (fn [d i] (str "stack" i)))
           (.on "click" (fn [d] (when (= event-type :click)
                                  (let [bar     (js* "this")
                                        get-val (fn [n] (-> n  .-baseVal .-value))
                                        [x y]   (js->clj (-> js/d3 (.mouse bar)))
                                        x1      (-> bar .-x get-val)]
                                    (put! hover-chan {:event :click :v (.-x d) :d d})))))
-          (.on "mouseout" (fn [_] (when (= event-type :hover)
-                                    (put! hover-chan {:event :mouseout}))))
-          (.on "mouseover" (fn [d] (when (= event-type :hover)
-                                     (let [[x y] (js->clj (-> js/d3 (.mouse (js* "this"))))]
-                                       (put! hover-chan {:event :mouseover :v (.-x d) :d d})))))
+          (.on "mouseout" (fn [d i]
+                            (-> js/d3 (.selectAll (str "rect.stack" i)) (.classed "highlight" false))
+                            (when (= event-type :hover)
+                              (put! hover-chan {:event :mouseout}))))
+          (.on "mouseover" (fn [d i]
+                             (-> js/d3 (.selectAll (str "rect.stack" i)) (.classed "highlight" true))
+                             (when (= event-type :hover)
+                               (let [[x y] (js->clj (-> js/d3 (.mouse (js* "this"))))]
+                                 (put! hover-chan {:event :mouseover :v (.-x d) :d d})))))
           ;; Transitions
           (.attr "height" 0)
           (.attr "y" height)

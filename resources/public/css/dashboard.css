@@ -17,6 +17,10 @@
   display: none;
 }
 
+rect.highlight {
+    fill: #4D0000;
+}
+
 .number-widget, .number-widget panel-body {
     max-height: 100%;
     font-size: 80%;
