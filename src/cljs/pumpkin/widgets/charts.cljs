@@ -181,7 +181,7 @@
           (.attr "x" (fn [d] (x-scale (aget d "x"))))
           (.attr "y" (fn [d] (y-scale (+ (aget d "y0") (aget d "y")))))
           (.attr "height" (fn [d] (- (y-scale (aget d "y0")) (y-scale (+ (aget d "y0") (aget d "y"))))))
-          (.attr "width" (* (/ width (count data)) 2))))
+          (.attr "width" (- (* (/ width (count data)) 2) 3))))
 
     ;; Legend
     (-> (.selectAll svg ".legend")
