@@ -83,7 +83,7 @@
   (om/update! app [:repository :pulls :value] (count msg)))
 
 (defmethod handle-event :dashboard/github-code-frequency [[_ msg] app owner]
-  (om/update! app [:repository :code-freuqency :updated-at] (new js/Date))
+  (om/update! app [:repository :code-frequency :updated-at] (new js/Date))
   (om/update! app [:repository :code-frequency :data] (-> msg parse-frequencies)))
 
 (defmethod handle-event :dashboard/github-contributors [[_ msg] app owner]
@@ -100,13 +100,14 @@
   (chsk-send! [:session/status]))
 
 (defn event-loop [app owner]
-  (go (loop [{:keys [event]} (<! ch-chsk)]
-        (let [[e payload] event]
-          (when-let [[id msg] (seq payload)]
-            (case e
-              :chsk/recv (handle-event payload app owner)
-              (test-session owner))))
-        (recur (<! ch-chsk)))))
+  (go-loop []
+    (let [{:keys [event]} (<! ch-chsk)
+          [e payload] event]
+      (when-let [[id msg] (seq payload)]
+        (case e
+          :chsk/recv (handle-event payload app owner)
+          (test-session owner)))
+      (recur))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Views                                                                                 ;;
@@ -160,7 +161,7 @@
     (render-state [_ state]
       (html
        (let [id (str "chart-" y-axis)]
-         [:div
+         [:div.chart
           (let [value          (common/timestamp->value (:value state) "week" (:data cursor))
                 selected-event (om/observe owner (event-type))]
             (om/build charts/bar-chart {:data value :div (:div cursor)}
@@ -178,7 +179,7 @@
 (defn chart-stats-view [cursor owner]
   (om/component
    (html
-    [:div.row-centered
+    [:div.row
      (for [item [{:k :deletions :color "#d62728"} {:k :additions :color "#4575b4"}]]
        [:div.col-centered {:style {:width "50%"}}
         (om/build chart-stats cursor {:key (:k item)
@@ -202,26 +203,22 @@
         (go-loop []
           (let [event-chan         (om/get-state owner :c)
                 {:keys [event v]}  (<! event-chan)]
-            (cond
-             (= event :click)      (when v
-                                     (om/set-state! owner :value v)
-                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))
-             (= event :mouseover)  (when v
-                                     (om/set-state! owner :value v)
-                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))))
+            (when v
+              (om/set-state! owner :value v)
+              (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd"))))
           (recur))))
     om/IRenderState
     (render-state [_ state]
       (let [value (common/timestamp->value (:value state) "w" (:weeks cursor))
             {:keys [author]} cursor]
         (html
-         [:div.col-sm-4.col-centered {:style {:font-size "80%"}}
+         [:div.col-sm-4 {:style {:font-size "80%"}}
           [:div.panel.panel-default
            [:div.panel-heading
             [:h4.panel-title [:p (:login author)] [:p (when-let [uri (:avatar_url author)]
                                 [:img.img-thumbnail.table-image.pull-right
                                  {:src uri :style {:max-width "25%"}}])]]]
-           [:div.panel-body {:style {:height 90}}
+           [:div.panel-body {:style {:height 80}}
             [:div
              [:p "Additions: " (aget value "a")]
              [:p "Deletions: " (aget value "d")]
@@ -233,8 +230,8 @@
 (defn team-members-stats-view [cursor owner]
   (om/component
    (html
-    [:div.table-view
-     [:div
+    [:div.row
+     [:div.table-view
       (om/build-all team-member cursor)]])))
 
 (defn table-row [cursor owner opts]
@@ -252,13 +249,9 @@
         (go-loop []
           (let [event-chan         (om/get-state owner :c)
                 {:keys [event v]}  (<! event-chan)]
-            (cond
-             (= event :click)      (when v
-                                     (om/set-state! owner :value v)
-                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))
-             (= event :mouseover)  (when v
-                                     (om/set-state! owner :value v)
-                                     (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd")))))
+            (when v
+              (om/set-state! owner :value v)
+              (om/update! week :selected-week (common/unparse-date v "yyyy-MM-dd"))))
           (recur))))
     om/IRenderState
     (render-state [_ state]
@@ -266,12 +259,11 @@
             value     (:value state)]
         (html
          (let [value (common/timestamp->value (:value state) "w" (:weeks cursor))]
-           [:div {:style {:font-size "80%"}}
-            [:tr
-             [:td (-> cursor :author :login)]
-             [:td (aget value "a")]
-             [:td (aget value "d")]
-             [:td (aget value "c")]]]))))
+           [:tr
+            [:td (-> cursor :author :login)]
+            [:td (aget value "a")]
+            [:td (aget value "d")]
+            [:td (aget value "c")]]))))
     om/IWillUnmount
     (will-unmount [_]
       (untap (om/get-shared owner :mult-chan) (om/get-state owner :c)))))
@@ -280,12 +272,11 @@
   (om/component
    (html
     [:div.table-view
-     [:div.col-centered
-      [:table.table
-       [:thead
-        [:tr [:th "Author"] [:th "Additions"] [:th "Deletions"] [:th "Total Commits"]]]
-       [:tbody
-        (om/build-all table-row cursor)]]]])))
+     [:table.table {:width "100%"}
+      [:thead
+       [:tr [:th "Author"] [:th "Additions"] [:th "Deletions"] [:th "Total Commits"]]]
+      [:tbody
+       (om/build-all table-row cursor)]]])))
 
 (defmulti code-frequency-stats (fn [cursor owner] (-> cursor :view :current)))
 
@@ -309,8 +300,8 @@
      (om/build team-members-stats-view (:data cursor) {:fn (parse-contributors :table)})])))
 
 (defn send-messages [urls]
-  (doseq [{:keys [k url]} urls]
-    (send-message [k {:url url}])))
+  (doseq [{:keys [k url refresh-rate]} urls]
+    (send-message [k {:url url :refresh-rate refresh-rate}])))
 
 (defn toggles [cursor owner]
   (om/component
@@ -352,33 +343,44 @@
                                         (om/update! cursor :current :click))}
                            "Click"))))))
 
+(defn refresh-stats [cursor owner]
+  (om/component
+   (html
+    (let [{:keys [refresh-rate updated-at]} cursor]
+      [:div
+       (str "Refresh rate: " (str (common/refresh-rate->hours refresh-rate) "h. Updated at "
+                                  (if (not (nil? updated-at))
+                                    (common/unparse-date updated-at "yyyy-MM-dd HH:mm")
+                                    "N/A")))]))))
+
 (defn repository-view [cursor owner {:keys [url]}]
   (reify
     om/IDidMount
     (did-mount [_]
-      (send-messages [{:k :dashboard/github-issues          :url (str url "/issues?state=open") }
-                      {:k :dashboard/github-pulls           :url (str url "/pulls?state=open")}
-                      {:k :dashboard/github-code-frequency  :url (str url "/stats/code_frequency")}
-                      {:k :dashboard/github-contributors    :url (str url "/stats/contributors")}]))
+      (send-messages [{:k :dashboard/github-issues          :url (str url "/issues?state=open") :refresh-rate 21600000}
+                      {:k :dashboard/github-pulls           :url (str url "/pulls?state=open") :refresh-rate 21600000}
+                      {:k :dashboard/github-code-frequency  :url (str url "/stats/code_frequency") :refresh-rate 21600000}
+                      {:k :dashboard/github-contributors    :url (str url "/stats/contributors") :refresh-rate 21600000}]))
     om/IRender
     (render [_]
       (html
-       [:div
-        [:div.col-md-12
-         [:div.row.view
-          [:div.col-md-6
-           (p/panel {:header (om/build toggles2 (-> cursor :code-frequency :event-toggle))}
-                    (om/build charts/stacked-bar-chart (:code-frequency cursor)
-                              {:opts {:id "stacked-bar-chart"}}))]
-          [:div.col-md-6
-           (p/panel {:header (om/build toggles (:contributors cursor))}
-                    (om/build code-frequency-stats (:contributors cursor)))]]
-         [:div.row.view
-          [:div.row.row-centered
-           [:div.col-sm-4.col-centered
-            (om/build numbers/simple-stats-card (:issues cursor))]
-           [:div.col-sm-4.col-centered
-            (om/build numbers/simple-stats-card (:pulls cursor))]]]]]))))
+       [:div.col-md-12
+        [:div.row.view
+         [:div.col-md-6
+          (p/panel {:header (om/build toggles2 (-> cursor :code-frequency :event-toggle))
+                    :footer (om/build refresh-stats (-> cursor :code-frequency))}
+                   (om/build charts/stacked-bar-chart (:code-frequency cursor)
+                             {:opts {:id "stacked-bar-chart"}}))]
+         [:div.col-md-6
+          (p/panel {:header (om/build toggles (:contributors cursor))
+                    :footer (om/build refresh-stats (-> cursor :contributors))}
+                   (om/build code-frequency-stats (:contributors cursor)))]]
+        [:div.row.view
+         [:div.row.row-centered
+          [:div.col-sm-4.col-centered
+           (om/build numbers/simple-stats-card (:issues cursor))]
+          [:div.col-sm-4.col-centered
+           (om/build numbers/simple-stats-card (:pulls cursor))]]]]))))
 
 (defn clock [cursor owner {:keys [formatter]}]
   (reify

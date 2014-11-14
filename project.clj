@@ -27,9 +27,7 @@
                  ;; Dev environment
                  [enlive "1.1.5"]
                  [figwheel "0.1.4-SNAPSHOT"]
-                 [environ "1.0.0"]
-                 [com.cemerick/piggieback "0.1.3"]
-                 [weasel "0.4.0-SNAPSHOT"]]
+                 [environ "1.0.0"]]
 
   :plugins [[lein-cljsbuild "1.0.3"]
             [lein-environ "1.0.0"]]
@@ -49,8 +47,7 @@
                                     :optimizations :none
                                     :pretty-print  true}}}}
 
-  :profiles {:dev {:repl-options {:init-ns pumpkin.server
-                                  :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
+  :profiles {:dev {:repl-options {:init-ns pumpkin.server}
                    :plugins [[lein-figwheel "0.1.4-SNAPSHOT"]]
                    :figwheel {:http-server-root "public"
                               :port 3449

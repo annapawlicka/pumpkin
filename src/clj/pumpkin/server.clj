@@ -1,10 +1,8 @@
 (ns pumpkin.server
-  (:require [clojure.core.async :as async
-             :refer [<! <!! chan go thread]]
+  (:require [clojure.core.async :as async :refer [<! <!! chan go-loop thread]]
             [clojure.java.io :as io]
-            [pumpkin.dev :refer [is-dev? inject-devmode-html browser-repl
-                                 start-figwheel]]
-            [compojure.core :refer [GET POST defroutes routes]]
+            [pumpkin.dev :refer [is-dev? inject-devmode-html start-figwheel]]
+            [compojure.core :refer [GET defroutes routes]]
             [compojure.route :refer [resources] :as r]
             [compojure.handler :refer [api] :as h]
             [taoensso.sente :as s]
@@ -18,7 +16,6 @@
 (let [{:keys [ch-recv send-fn ajax-post-fn
               ajax-get-or-ws-handshake-fn] :as sente-info}
       (s/make-channel-socket! {})]
-  (def ring-ajax-post   ajax-post-fn)
   (def ring-ajax-get-ws ajax-get-or-ws-handshake-fn)
   (def ch-chsk          ch-recv)
   (def chsk-send!       send-fn))
@@ -50,7 +47,6 @@
   (-> (routes
        (GET  "/"   req (#'index req))
        (GET  "/ws" req (#'ring-ajax-get-ws req))
-       (POST "/ws" req (#'ring-ajax-post   req))
        (resources "/")
        (resources "/react" {:root "react"})
        (r/not-found "<p>Page not found. I has a sad!</p>"))
@@ -77,67 +73,78 @@
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
     (let [session (:session ring-req)]
       (when-let [uid (:uid session)]
-        (println "Pushing github issues")
         (let [{:keys [url refresh-rate]} ?data]
           (while true
             (http/get url {}
                  (fn [{:keys [status headers body error]}]
                    (if error
                      (println error)
-                     (chsk-send! uid [:dashboard/github-issues
-                                      (json/read-str body
-                                                     :key-fn keyword)]))))
+                     (let [parsed-body (json/read-str body :key-fn keyword)]
+                       (if-not (seq (:message parsed-body))
+                         (do
+                           (println "Pushing github issues")
+                           (chsk-send! uid [:dashboard/github-issues parsed-body]))
+                         (println "Message" (:message parsed-body)))))))
             (Thread/sleep refresh-rate))))))
 
 (defmethod handle-event :dashboard/github-pulls
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
     (let [session (:session ring-req)]
       (when-let [uid (:uid session)]
-        (println "Pushing github pull requests")
         (let [{:keys [url refresh-rate]} ?data]
           (while true
             (http/get url {}
                  (fn [{:keys [status headers body error]}]
                    (if error
                      (println error)
-                     (chsk-send! uid [:dashboard/github-pulls
-                                      (json/read-str body
-                                                     :key-fn keyword)]))))
+                     (let [parsed-body (json/read-str body :key-fn keyword)]
+                       (if-not (seq (:message parsed-body))
+                         (do
+                           (println "Pushing github pull requests")
+                           (chsk-send! uid [:dashboard/github-pulls parsed-body]))
+                         (println "Message" (:message parsed-body)))))))
             (Thread/sleep refresh-rate))))))
 
 (defmethod handle-event :dashboard/github-code-frequency
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
     (let [session (:session ring-req)]
       (when-let [uid (:uid session)]
-        (println "Pushing github code frequency stats")
         (let [{:keys [url refresh-rate]} ?data]
           (while true
             (http/get url {}
-                 (fn [{:keys [status headers body error]}]
-                   (if error
-                     (println error)
-                     (chsk-send! uid [:dashboard/github-code-frequency
-                                      (->> (json/read-str body :key-fn keyword)
-                                           (mapv (fn [[week additions deletions]]
-                                                   [{:week week :type :additions :value additions}
-                                                    {:week week :type :deletions :value deletions}]))
-                                           (apply concat)
-                                           (into []))]))))
+                      (fn [{:keys [status headers body error]}]
+                        (if error
+                          (println error)
+                          (let [parsed-body (json/read-str body :key-fn keyword)]
+                            (if-not (seq (:message parsed-body))
+                              (do
+                                (println "Pushing github code frequency stats")
+                                (chsk-send! uid [:dashboard/github-code-frequency
+                                                 (->> parsed-body
+                                                      (mapv (fn [[week additions deletions]]
+                                                              [{:week week :type :additions :value additions}
+                                                               {:week week :type :deletions :value deletions}]))
+                                                      (apply concat)
+                                                      (into []))]))
+                              (println "Message" (:message parsed-body)))))))
             (Thread/sleep refresh-rate))))))
 
 (defmethod handle-event :dashboard/github-contributors
   [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
     (let [session (:session ring-req)]
       (when-let [uid (:uid session)]
-        (println "Pushing github contributors stats")
         (let [{:keys [url refresh-rate]} ?data]
           (while true
             (http/get url {}
                  (fn [{:keys [status headers body error]}]
                    (if error
                      (println error)
-                     (let [parsed (json/read-str body :key-fn keyword)]
-                       (chsk-send! uid [:dashboard/github-contributors parsed])))))
+                     (let [parsed-body (json/read-str body :key-fn keyword)]
+                       (if-not (seq (:message parsed-body))
+                         (do
+                           (println "Pushing github contributors stats")
+                           (chsk-send! uid [:dashboard/github-contributors parsed-body]))
+                         (println "Message" (:message parsed-body)))))))
             (Thread/sleep refresh-rate))))))
 
 (defmethod handle-event :default
@@ -147,9 +154,11 @@
 (defn event-loop
   "Handle inbound events."
   []
-  (go (loop [{:as ev-msg :keys [?data id]} (<! ch-chsk)]
-        (thread (handle-event ev-msg))
-        (recur (<! ch-chsk)))))
+  (go-loop []
+    (let [{:as ev-msg :keys [?data id]} (<! ch-chsk)]
+      (println "- " id)
+      (thread (handle-event ev-msg)))
+    (recur)))
 
 (defn run [& [port]]
   (event-loop)

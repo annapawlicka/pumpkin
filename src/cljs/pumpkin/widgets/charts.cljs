@@ -32,17 +32,15 @@
         x            (.addCategoryAxis dimple-chart "x" x-axis)
         y            (.addMeasureAxis dimple-chart "y" y-axis)
         s            (.addSeries dimple-chart series plot (clj->js [x y]))
-        color-fn     (-> js/dimple .-color)
-        legend       (.addLegend dimple-chart "10%" "5%" "80%" "10%" "right")]
+        color-fn     (-> js/dimple .-color)]
     (aset s "data" (clj->js data))
     (aset dimple-chart "defaultColors" (to-array [(new color-fn color)]))
     (.addOrderRule x (sort-by-field y-axis))
     (.draw dimple-chart (when (= event-type :click) 1000))
-    (-> legend .-shapes (.selectAll "text") (.text (clojure.string/capitalize y-axis)))
     ;; Rotate x-axis labels
     (.attr (.selectAll (.-shapes x) "text") "transform" " rotate(45 10 25)")
-    (.attr (.selectAll (.-shapes x) "text") "x" 4)
-    (.attr (.selectAll (.-shapes x) "text") "y" 4)))
+    (.attr (.selectAll (.-shapes x) "text") "x" 0)
+    (.attr (.selectAll (.-shapes x) "text") "y" 2)))
 
 (defn bar-chart
   "Simple bar chart done using dimple.js"
@@ -59,7 +57,7 @@
     om/IRender
     (render [_]
       (html
-       [:div.chart {:id id}]))
+       [:div {:id id :style {:height "90%"}}]))
     om/IDidMount
     (did-mount [_]
       (let [n (.getElementById js/document id)]
@@ -103,7 +101,7 @@
 ;; Draw chart
 
 (defn- draw [data hover-chan size id event-type]
-  (let [margin          {:top 10 :right 40 :bottom 55 :left 50}
+  (let [margin          {:top 10 :right 40 :bottom 75 :left 50}
         width            (-> (or (:width size) (:width (default-size id)))  (- (:left margin) (:right margin)))
         height           (-> (or (:height size) (:height (default-size id))) (- (:top margin) (:bottom margin)))
         ;; Grouped by type and stacked
@@ -230,7 +228,8 @@
       (let [data         (:data chart)
             event-type   (-> chart :event-toggle :current)
             event-chan   (om/get-shared owner :event-chan)]
-        (draw data event-chan (:size chart) id event-type)))
+        (when (seq data)
+          (draw data event-chan (:size chart) id event-type))))
     om/IDidUpdate
     (did-update [_ _ _]
       (let [n (.getElementById js/document id)]
@@ -239,4 +238,5 @@
       (let [data         (:data chart)
             event-type   (-> chart :event-toggle :current)
             event-chan   (om/get-shared owner :event-chan)]
-        (draw data event-chan (:size chart) id event-type)))))
+        (when (seq data)
+          (draw data event-chan (:size chart) id event-type))))))
