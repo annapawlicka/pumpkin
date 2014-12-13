@@ -1,5 +1,10 @@
 # pumpkin
 
+Demo from my Clojure/conj 2014 talk. 
+
+[Video](https://www.youtube.com/watch?v=4-oyZpLRQ20).
+[Slides](http://www.slideshare.net/annapawlicka/om-nom-nom-nom).
+
 Deployed to heroku: [pumpkin](http://evening-citadel-3933.herokuapp.com/).
 
 ![Alt text](http://i.imgur.com/uRmH0eH.png "Sample dashboard")
